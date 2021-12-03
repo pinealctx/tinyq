@@ -51,7 +51,7 @@ type Consumer struct {
 	startOnce  sync.Once
 	stopOnce   sync.Once
 	stopChan   chan struct{}
-	quitSignal chan struct{}
+	exitSignal chan struct{}
 }
 
 //NewConsumer new consumer
@@ -88,7 +88,7 @@ func NewConsumer(cnf *Cnf, mh MsgHandler, eh *ErrHandler) (*Consumer, error) {
 		submittedID: sid,
 		submittedTS: submittedTS,
 		stopChan:    make(chan struct{}),
-		quitSignal:  make(chan struct{}),
+		exitSignal:  make(chan struct{}),
 	}
 	return c, nil
 }
@@ -105,21 +105,37 @@ func (c *Consumer) Stop() {
 
 //Wait : wait consumer quit
 func (c *Consumer) Wait() {
-	<-c.quitSignal
+	<-c.exitSignal
+}
+
+//ExitSignal : exit consumer signal
+func (c *Consumer) ExitSignal() <-chan struct{} {
+	return c.exitSignal
 }
 
 //start : start consumer in go routine
 func (c *Consumer) start() {
 	go func() {
-		defer close(c.quitSignal)
+		defer close(c.exitSignal)
+		var timer *time.Timer
 		for {
+			c.process()
+			if timer == nil {
+				timer = time.NewTimer(c.tick)
+			} else {
+				if !timer.Stop() {
+					<-timer.C
+				}
+				timer.Reset(c.tick)
+			}
 			select {
+			case <-timer.C:
 			case <-c.stopChan:
 				c.submitWhenExit()
+				if !timer.Stop() {
+					<-timer.C
+				}
 				return
-			default:
-				c.process()
-				time.Sleep(c.tick)
 			}
 		}
 	}()

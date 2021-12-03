@@ -5,12 +5,20 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/vmihailenco/msgpack/v5"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 type MsgHandler struct {
+	panicMode bool
 }
 
-func (m MsgHandler) Do(msg *hookq.Msg) error {
+func NewMsgHandler(panicMode bool) hookq.MsgHandler {
+	return &MsgHandler{panicMode: panicMode}
+}
+
+func (m *MsgHandler) Do(msg *hookq.Msg) error {
 	log.Println("id:", msg.ID)
 	log.Println("protocol:", msg.P)
 	var a OrderAction
@@ -19,6 +27,9 @@ func (m MsgHandler) Do(msg *hookq.Msg) error {
 		return err
 	}
 	log.Printf("msg:{id:%d, state:%d}\n", a.ID, a.State)
+	if m.panicMode {
+		panic("self.panic")
+	}
 	return nil
 }
 
@@ -26,7 +37,7 @@ type ErrorHandler struct {
 	category string
 }
 
-func NewErrorHandler(cat string) *ErrorHandler {
+func NewErrorHandler(cat string) hookq.ErrDo {
 	return &ErrorHandler{category: cat}
 }
 
@@ -65,6 +76,10 @@ var consumerCmd = &cli.Command{
 			Usage: "catch time duration",
 			Value: 0,
 		},
+		&cli.StringFlag{
+			Name:  "m",
+			Usage: "mode -- n(tiny mode)/p(panic mode)/w(whole mode)",
+		},
 	},
 	Action: consumerMsg,
 }
@@ -75,7 +90,15 @@ func consumerMsg(c *cli.Context) error {
 		return err
 	}
 	var consumer *hookq.Consumer
-	consumer, err = hookq.NewConsumer(cnf, MsgHandler{}, &hookq.ErrHandler{
+	var mode = c.String("m")
+	var msgHandler hookq.MsgHandler
+	if mode == "p" {
+		msgHandler = NewMsgHandler(true)
+	} else {
+		msgHandler = NewMsgHandler(false)
+	}
+
+	consumer, err = hookq.NewConsumer(cnf, msgHandler, &hookq.ErrHandler{
 		ReadErrHandler:   NewErrorHandler("read"),
 		SubmitErrHandler: NewErrorHandler("submit"),
 		MsgErrHandler:    NewErrorHandler("msg"),
@@ -84,8 +107,26 @@ func consumerMsg(c *cli.Context) error {
 		return err
 	}
 	consumer.Start()
-	consumer.Wait()
-	return nil
+
+	switch mode {
+	case "p", "w":
+		var signalChan = make(chan os.Signal, 1)
+		signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+		select {
+		case <-signalChan:
+			consumer.Stop()
+			consumer.Wait()
+			log.Println("consumer.exit.by.signal")
+			return nil
+		case <-consumer.ExitSignal():
+			log.Println("consumer.exit.by.internal.error")
+			return nil
+		}
+	default:
+		consumer.Wait()
+		log.Println("consumer.default.quit")
+		return nil
+	}
 }
 
 func loadConsumerCnf(c *cli.Context) (*hookq.Cnf, error) {

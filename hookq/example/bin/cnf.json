@@ -1,0 +1,23 @@
+{
+  "mysql": {
+    "user": "root",
+    "password": "run!@#QWE",
+    "proto": "tcp",
+    "host": "localhost:3306",
+    "schema": "test",
+    "options": {
+      "charset": "utf8mb4",
+      "parseTime": "True",
+      "loc": "Local"
+    },
+    "logGorm": true,
+    "topicTbl": "topic.topic_example000",
+    "cursorTbl": "topic.topic_cursor_example000",
+    "id": "000",
+    "n": 500,
+    "tick": "10s",
+    "catchN": 1000,
+    "catchT": "600s",
+    "submitRetryNum": 10
+  }
+}

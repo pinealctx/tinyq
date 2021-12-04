@@ -114,6 +114,7 @@ func consumerMsg(c *cli.Context) error {
 		signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 		select {
 		case <-signalChan:
+			log.Println("received.exit.ctrl-c")
 			consumer.Stop()
 			consumer.Wait()
 			log.Println("consumer.exit.by.signal")

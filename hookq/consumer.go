@@ -122,14 +122,10 @@ func (c *Consumer) start() {
 			c.process()
 			if timer == nil {
 				timer = time.NewTimer(c.tick)
-			} else {
-				if !timer.Stop() {
-					<-timer.C
-				}
-				timer.Reset(c.tick)
 			}
 			select {
 			case <-timer.C:
+				timer.Reset(c.tick)
 			case <-c.stopChan:
 				c.submitWhenExit()
 				if !timer.Stop() {
